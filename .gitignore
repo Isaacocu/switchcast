@@ -7,3 +7,19 @@ dist/
 .env.local
 .vite/
 *.tsbuildinfo
+
+# 安全加固 — 证书和密钥文件
+*.pem
+*.key
+*.cert
+*.p12
+*.pfx
+
+# 环境变量变体
+.env.*
+!.env.example
+
+# 构建调试信息（防止误上传）
+dist/builder-debug.yml
+dist/builder-effective-config.yaml
+dist/*.blockmap
