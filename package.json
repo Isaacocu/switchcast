@@ -44,13 +44,15 @@
       "extendInfo": {
         "NSCameraUsageDescription": "SwitchCast 需要访问摄像头以采集采集卡的视频画面，用于 Nintendo Switch 投屏显示。",
         "NSMicrophoneUsageDescription": "SwitchCast 需要访问麦克风以采集采集卡的音频信号，用于 Nintendo Switch 投屏的声音播放。"
-      }
+      },
+      "icon": "build/icon.icns"
     },
     "win": {
       "target": [
         "nsis",
         "zip"
-      ]
+      ],
+      "icon": "build/icon.ico"
     },
     "nsis": {
       "oneClick": false,
@@ -61,6 +63,12 @@
     },
     "files": [
       "out/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "build/icon.png",
+        "to": "icon.png"
+      }
     ]
   },
   "author": "SwitchCast"

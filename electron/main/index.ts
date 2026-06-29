@@ -17,6 +17,11 @@ function createWindow(): void {
     minWidth: 960,
     minHeight: 600,
     backgroundColor: '#0a0a0a',
+    // 应用窗口图标（Windows 任务栏 / Linux 窗口图标）
+    // 开发模式: 从项目根目录 build/ 读取；生产模式: 从 resources/ 读取
+    icon: app.isPackaged
+      ? join(process.resourcesPath, 'icon.png')
+      : join(__dirname, '../../build/icon.png'),
     // macOS 使用 hiddenInset（原生红绿灯按钮），Windows 使用 hidden（自定义标题栏）
     titleBarStyle: isMac ? 'hiddenInset' : 'hidden',
     // Windows 上自动隐藏菜单栏（按 Alt 显示）

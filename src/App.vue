@@ -5,10 +5,11 @@
       class="titlebar flex items-center justify-between h-8 bg-bg-secondary border-b border-border-main select-none shrink-0"
       :class="{ 'pl-[72px]': isMac }"
     >
-      <!-- 应用名称 -->
-      <span class="text-sm font-semibold text-text-secondary pointer-events-none">
-        SwitchCast
-      </span>
+      <!-- 应用名称 + 图标 -->
+      <div class="flex items-center pointer-events-none">
+        <img src="@/assets/app-icon.png" alt="SwitchCast" class="w-4 h-4 mr-2" />
+        <span class="text-sm font-semibold text-text-secondary">SwitchCast</span>
+      </div>
 
       <!-- macOS: 右侧占位（平衡左侧红绿灯空间，使标题居中） -->
       <div v-if="isMac" class="w-[72px]"></div>
