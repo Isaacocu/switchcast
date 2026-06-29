@@ -1,102 +1,127 @@
-# SwitchCast
+# SwitchCast — Nintendo Switch 投屏软件 | Screen Casting & Game Capture
 
-Nintendo Switch → Mac/Windows 有线投屏桌面软件，类似 OBS 的轻量级投屏工具。
+> Nintendo Switch → Mac / Windows 有线投屏桌面软件。通过 USB HDMI 采集卡将 Switch 游戏画面和声音实时投屏到电脑，轻量级 OBS 替代方案。
 
-## 功能
+**SwitchCast** is a lightweight, open-source desktop application for casting Nintendo Switch gameplay to Mac and Windows PC via USB HDMI capture card. A minimal OBS alternative focused on pure screen casting with low latency, audio sync, and zero telemetry.
 
-- 🎮 通过 USB HDMI 采集卡将 Switch 画面投屏到电脑
-- 🔊 适配声音和画面（Web Audio API 管线，禁用 Chromium 音频处理）
-- 📺 1080p60 全屏显示
-- 📊 实时统计 OSD（FPS / 分辨率 / 延迟 / 丢帧）
-- ⚙️ 设置持久化（分辨率 / 帧率 / 音量 / 音画同步偏移）
-- 🔌 设备热插拔自动检测
-- 🖥️ 跨平台支持（macOS + Windows）
+---
 
-## 技术栈
+## 核心功能 | Features
+
+- 🎮 **Switch 投屏** — 通过 USB HDMI 采集卡将 Nintendo Switch 画面实时投屏到 Mac / Windows
+- 🔊 **音画同步** — Web Audio API 独立音频管线，支持音画同步偏移调节（DelayNode，-200ms ~ +200ms）
+- 📺 **1080p60 高清** — 支持全高清 60fps 全屏显示
+- 🚫 **纯净音频** — 禁用 Chromium 回声消除(AEC)/噪声抑制(NS)/自动增益(AGC)，游戏音频无消音无波动
+- 📊 **实时统计** — FPS、分辨率、延迟、丢帧 OSD 叠加显示
+- ⚙️ **设置持久化** — 分辨率、帧率、音量、音画同步偏移自动保存
+- 🔌 **热插拔检测** — USB 采集卡插拔自动识别，无需重启
+- 🖥️ **跨平台** — macOS (Apple Silicon arm64 + Intel x64) + Windows x64
+
+## 搜索关键词 | Keywords
+
+`Switch 投屏` `Switch 投屏软件` `Switch 屏幕投射` `Nintendo Switch capture` `Switch to PC` `Switch to Mac` `游戏投屏` `游戏采集` `OBS 替代` `OBS alternative` `采集卡软件` `HDMI capture` `USB capture card` `screen casting` `game capture` `low latency capture` `Electron desktop app`
+
+## 技术栈 | Tech Stack
 
 | 层级 | 技术 |
 |------|------|
-| UI 框架 | Electron 31 + Vue 3.4 + TypeScript 5.5 |
+| 桌面框架 | Electron 31 + Vue 3.4 + TypeScript 5.5 |
 | 构建工具 | electron-vite 2.3 + Vite 5 |
 | 状态管理 | Pinia 2.1 |
 | 样式 | TailwindCSS 3.4 |
-| 音频管线 | Web Audio API（AudioContext + GainNode） |
-| 打包 | electron-builder 24 |
+| 音频管线 | Web Audio API（AudioContext → DelayNode → GainNode → Destination） |
+| 视频采集 | getUserMedia (UVC/UAC protocol) |
+| 打包分发 | electron-builder 24 |
 
-## 硬件要求
+## 硬件要求 | Requirements
 
-- Nintendo Switch（底座 HDMI 输出）
-- USB HDMI 采集卡（UVC/UAC 协议，推荐 Elgato Cam Link 4K 或 Mirabox Capture Box）
-- USB 3.0+ 接口
+| 组件 | 要求 |
+|------|------|
+| 游戏机 | Nintendo Switch（底座 HDMI 输出，1080p60） |
+| 采集卡 | USB HDMI 采集卡（UVC/UAC 协议） |
+| 推荐采集卡 | Elgato Cam Link 4K / Mirabox Capture Box / 廉价 UVC 采集棒 |
+| 接口 | USB 3.0+（确保带宽充足） |
+| 系统 | macOS 10.15+ 或 Windows 10/11 64-bit |
 
-## 连接拓扑
+## 连接方式 | Setup
 
 ```
-Nintendo Switch (底座 HDMI 1.4b)
+Nintendo Switch (底座 HDMI 1.4b 输出)
     │ HDMI 线缆
     ▼
-USB HDMI 采集卡 (UVC + UAC)
+USB HDMI 采集卡 (UVC + UAC, 即插即用无需驱动)
     │ USB 3.0+ 线缆
     ▼
-Mac / Windows PC
+Mac / Windows PC → SwitchCast 实时投屏
 ```
 
-## 开发
+## 快速开始 | Quick Start
+
+### 下载安装
+
+前往 [Releases](https://github.com/Isaacocu/switchcast/releases) 页面下载对应平台的安装包：
+
+| 平台 | 架构 | 文件 | 适用 |
+|------|------|------|------|
+| macOS | Apple Silicon | `SwitchCast-1.0.0-arm64.dmg` | M1/M2/M3/M4 芯片 |
+| macOS | Intel | `SwitchCast-1.0.0-x64.dmg` | Intel 芯片 Mac |
+| Windows | x64 | `SwitchCast-1.0.0-win-x64.exe` | 64 位 Windows 10/11 |
+
+### 使用方法
+
+1. Switch 放入底座，HDMI 连接到采集卡
+2. 采集卡通过 USB 3.0+ 连接到电脑
+3. 启动 SwitchCast，选择视频和音频设备
+4. 点击"开始投屏"即可
+
+### 开发构建
 
 ```bash
-# 安装依赖
+git clone https://github.com/Isaacocu/switchcast.git
+cd switchcast
 npm install
-
-# 开发模式
-npm run dev
-
-# 构建
-npm run build
-
-# 打包（macOS + Windows）
-npm run dist
-
-# 仅打包 macOS
-npm run dist:mac
-
-# 仅打包 Windows
-npm run dist:win
+npm run dev          # 开发模式
+npm run build        # 编译
+npm run dist         # 打包全平台
+npm run dist:mac     # 仅 macOS
+npm run dist:win     # 仅 Windows
 ```
 
-## 架构
+## 架构 | Architecture
 
 ```
-┌─────────────────────────────────────────────┐
-│        Electron Renderer (Vue 3 + TS)        │
-│  VideoView · DevicePanel · ControlBar       │
-│  SettingsDialog · StatsOverlay              │
-├─────────────────────────────────────────────┤
-│            IPC Bridge (preload)              │
-├─────────────────────────────────────────────┤
-│          Electron Main Process              │
-│  CaptureManager · PermissionManager         │
-├─────────────────────────────────────────────┤
-│              Web Audio API                   │
-│  MediaStreamSource → GainNode → Destination  │
-└─────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────┐
+│          Electron Renderer (Vue 3 + TS)          │
+│  VideoView · DevicePanel · ControlBar           │
+│  SettingsDialog · StatsOverlay                  │
+├─────────────────────────────────────────────────┤
+│              IPC Bridge (preload)                │
+├─────────────────────────────────────────────────┤
+│            Electron Main Process                │
+│  CaptureManager · PermissionManager             │
+├─────────────────────────────────────────────────┤
+│                Web Audio API                     │
+│  MediaStreamSource → DelayNode → GainNode        │
+│                   → AudioDestination             │
+└─────────────────────────────────────────────────┘
 ```
 
-## 音频处理
+### 音频处理说明
 
-默认禁用 Chromium 的 WebRTC 音频处理模块（AEC/NS/AGC），避免游戏音频被误判为回声/噪声而消音。音频通过 Web Audio API 管线独立播放，绕过 `<video>` 元素的 media pipeline。
+SwitchCast 默认禁用 Chromium 的 WebRTC 音频处理模块（AEC/NS/AGC），这些模块为 VoIP 通话设计，会误判游戏音频为回声/噪声导致消音，或自动调整增益导致音量波动。音频通过 Web Audio API 独立管线播放，完全绕过 `<video>` 元素的 media pipeline，确保游戏音频原样输出。
 
-## 开发路线
+## 开发路线 | Roadmap
 
 - [x] Phase 1: 硬件验证
-- [x] Phase 2: Electron WebView MVP
-- [ ] Phase 3: Swift 原生采集升级（条件性）
-- [ ] Phase 4: 录制功能（VideoToolbox 硬件编码）
-- [ ] Phase 5: RTMP 推流
-- [ ] Phase 6: 高级功能（滤镜 / 多源 / 快捷键）
+- [x] Phase 2: Electron WebView MVP（getUserMedia 采集 + Web Audio API 音频）
+- [ ] Phase 3: 原生采集升级（AVFoundation/CoreAudio，进一步降低延迟）
+- [ ] Phase 4: 录制功能（硬件编码，MP4 录制）
+- [ ] Phase 5: RTMP 推流（直播推流到 B站/抖音/Twitch）
+- [ ] Phase 6: 高级功能（画面滤镜 / 多源合成 / 全局快捷键）
 
 ## License
 
-MIT
+MIT License — 免费开源，任何人可自由使用、修改和分发。
 
 ---
 
