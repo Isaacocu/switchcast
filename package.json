@@ -1,0 +1,67 @@
+{
+  "name": "switchcast",
+  "version": "1.0.0",
+  "description": "Nintendo Switch wired screen casting (macOS & Windows)",
+  "main": "out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "postinstall": "electron-builder install-app-deps",
+    "dist": "electron-vite build && electron-builder --mac --win",
+    "dist:mac": "electron-vite build && electron-builder --mac",
+    "dist:win": "electron-vite build && electron-builder --win"
+  },
+  "dependencies": {
+    "pinia": "^2.1.0",
+    "vue": "^3.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@vitejs/plugin-vue": "^5.0.0",
+    "autoprefixer": "^10.4.0",
+    "electron": "^31.0.0",
+    "electron-builder": "^24.0.0",
+    "electron-vite": "^2.3.0",
+    "postcss": "^8.4.0",
+    "tailwindcss": "^3.4.0",
+    "typescript": "^5.5.0",
+    "vite": "^5.0.0",
+    "vue-tsc": "^2.0.0"
+  },
+  "build": {
+    "appId": "com.switchcast.app",
+    "productName": "SwitchCast",
+    "directories": {
+      "output": "dist"
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.video",
+      "extendInfo": {
+        "NSCameraUsageDescription": "SwitchCast 需要访问摄像头以采集采集卡的视频画面，用于 Nintendo Switch 投屏显示。",
+        "NSMicrophoneUsageDescription": "SwitchCast 需要访问麦克风以采集采集卡的音频信号，用于 Nintendo Switch 投屏的声音播放。"
+      }
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "zip"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "SwitchCast"
+    },
+    "files": [
+      "out/**/*"
+    ]
+  },
+  "author": "SwitchCast"
+}
