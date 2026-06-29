@@ -52,32 +52,6 @@
           />
         </div>
 
-        <!-- 中间：录制 + 推流（Phase 4/5 占位，禁用状态） -->
-        <div class="flex items-center gap-2">
-          <!-- 录制按钮 -->
-          <button
-            class="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs text-white/30 cursor-not-allowed"
-            disabled
-            title="录制功能将在 Phase 4 推出"
-          >
-            <span class="w-2.5 h-2.5 rounded-full bg-red-500/40"></span>
-            录制
-          </button>
-
-          <!-- 推流按钮 -->
-          <button
-            class="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs text-white/30 cursor-not-allowed"
-            disabled
-            title="推流功能将在 Phase 5 推出"
-          >
-            <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M23 7l-7 5 7 5V7z" stroke-linecap="round" stroke-linejoin="round" />
-              <rect x="1" y="5" width="15" height="14" rx="2" stroke-linecap="round" stroke-linejoin="round" />
-            </svg>
-            推流
-          </button>
-        </div>
-
         <!-- 右侧：设置 + 统计 -->
         <div class="flex items-center gap-2">
           <!-- 统计信息按钮 -->

@@ -88,9 +88,10 @@ const containerRef = ref<HTMLDivElement | null>(null)
 // Web Audio API 管线
 let audioContext: AudioContext | null = null
 let mediaStreamSource: MediaStreamAudioSourceNode | null = null
+let delayNode: DelayNode | null = null
 let gainNode: GainNode | null = null
 
-// 建立 Web Audio 管线：MediaStream → Source → Gain → Destination
+// 建立 Web Audio 管线：MediaStream → Source → Delay → Gain → Destination
 function setupAudioPipeline(stream: MediaStream) {
   const audioTracks = stream.getAudioTracks()
   if (audioTracks.length === 0) return
@@ -101,12 +102,17 @@ function setupAudioPipeline(stream: MediaStream) {
   // 从 MediaStream 创建音频源
   mediaStreamSource = audioContext.createMediaStreamSource(stream)
 
+  // 创建 DelayNode 用于音画同步偏移（syncOffset 单位 ms，转换为秒）
+  delayNode = audioContext.createDelay(1.0)  // 最大延迟 1 秒
+  delayNode.delayTime.value = Math.max(0, settingsStore.syncOffset / 1000)  // ms → s，负值钳为 0
+
   // 创建 GainNode 用于音量控制
   gainNode = audioContext.createGain()
   gainNode.gain.value = settingsStore.volume
 
-  // 连接管线：Source → Gain → Destination
-  mediaStreamSource.connect(gainNode)
+  // 连接管线：Source → Delay → Gain → Destination
+  mediaStreamSource.connect(delayNode)
+  delayNode.connect(gainNode)
   gainNode.connect(audioContext.destination)
 
   // <video> 元素静音，音频仅通过 Web Audio API 输出
@@ -128,6 +134,10 @@ function teardownAudioPipeline() {
   if (mediaStreamSource) {
     mediaStreamSource.disconnect()
     mediaStreamSource = null
+  }
+  if (delayNode) {
+    delayNode.disconnect()
+    delayNode = null
   }
   if (gainNode) {
     gainNode.disconnect()
@@ -157,6 +167,18 @@ watch(
       video.srcObject = null
       // 清理 Web Audio 管线
       teardownAudioPipeline()
+    }
+  }
+)
+
+// 监听音画同步偏移设置变化 — 通过 DelayNode 控制音频延迟
+watch(
+  () => settingsStore.syncOffset,
+  (offset) => {
+    if (delayNode && audioContext) {
+      // 使用 setTargetAtTime 平滑过渡，避免延迟变化时的音频爆音
+      // DelayNode delayTime 不能为负，负值钳为 0
+      delayNode.delayTime.setTargetAtTime(Math.max(0, offset / 1000), audioContext.currentTime, 0.01)
     }
   }
 )
