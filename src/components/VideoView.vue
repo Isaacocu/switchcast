@@ -3,8 +3,16 @@
     ref="containerRef"
     class="relative w-full h-full bg-black flex items-center justify-center overflow-hidden"
   >
-    <!-- 视频元素 -->
+    <!-- 低延迟渲染画布（MediaStreamTrackProcessor 直渲，最新帧优先） -->
+    <canvas
+      v-show="lowLatencyActive"
+      ref="canvasEl"
+      class="max-w-full max-h-full object-contain"
+    />
+
+    <!-- 视频元素（MediaStreamTrackProcessor 不可用时的回退路径） -->
     <video
+      v-show="!lowLatencyActive"
       ref="videoEl"
       class="max-w-full max-h-full object-contain"
       autoplay
@@ -79,11 +87,17 @@ import StatsOverlay from './StatsOverlay.vue'
 const captureStore = useCaptureStore()
 const settingsStore = useSettingsStore()
 
-/** 视频元素引用 */
+/** 视频元素引用（回退路径） */
 const videoEl = ref<HTMLVideoElement | null>(null)
 
-/** 容器元素引用（用于全屏） */
+/** 低延迟渲染画布引用 */
+const canvasEl = ref<HTMLCanvasElement | null>(null)
+
+/** 容器元素引用（用于全屏，同时包含 canvas 和 video，两种模式都能全屏） */
 const containerRef = ref<HTMLDivElement | null>(null)
+
+/** 低延迟模式是否激活（控制 canvas / video 显示切换） */
+const lowLatencyActive = ref(false)
 
 // Web Audio API 管线
 let audioContext: AudioContext | null = null
@@ -91,13 +105,132 @@ let mediaStreamSource: MediaStreamAudioSourceNode | null = null
 let delayNode: DelayNode | null = null
 let gainNode: GainNode | null = null
 
+// ==================== 低延迟渲染器 ====================
+// MediaStreamTrackProcessor 直接读帧绘制到 canvas，绕过 <video> 元素
+// 内部的抖动缓冲（1-3 帧 ≈ 16-50ms），实现"最新帧优先"策略
+
+let frameReader: ReadableStreamDefaultReader<VideoFrame> | null = null
+let renderCtx: CanvasRenderingContext2D | null = null
+let isLowLatencyMode = false
+
+/** 帧龄移动平均值（ms），指数移动平均避免抖动 */
+let latencyEma = 0
+
+/** renderLoop 帧计数（用于 FPS 统计） */
+let renderFrameCount = 0
+
+/** 上次统计上报时间戳 */
+let lastReportTime = 0
+
+async function startLowLatencyRenderer(stream: MediaStream): Promise<boolean> {
+  const videoTrack = stream.getVideoTracks()[0]
+  if (!videoTrack) return false
+
+  // 特性检测：MediaStreamTrackProcessor 需要 Chromium 94+（Electron 31 支持）
+  if (typeof MediaStreamTrackProcessor === 'undefined') {
+    console.warn('[VideoView] MediaStreamTrackProcessor 不可用，回退到 video 元素')
+    return false
+  }
+
+  const canvas = canvasEl.value
+  if (!canvas) return false
+
+  // 设置画面提示为运动优先（减少 Chromium 内部平滑处理）
+  videoTrack.contentHint = 'motion'
+
+  const settings = videoTrack.getSettings()
+  canvas.width = settings.width || 1920
+  canvas.height = settings.height || 1080
+
+  // desynchronized: true 允许 canvas 绕过合成器 vsync 同步（关键低延迟参数）
+  renderCtx = canvas.getContext('2d', { desynchronized: true, alpha: false })
+  if (!renderCtx) return false
+
+  try {
+    const processor = new MediaStreamTrackProcessor({ track: videoTrack })
+    frameReader = processor.readable.getReader()
+  } catch (err) {
+    console.warn('[VideoView] MediaStreamTrackProcessor 创建失败，回退到 video 元素:', err)
+    renderCtx = null
+    return false
+  }
+
+  isLowLatencyMode = true
+  latencyEma = 0
+  renderFrameCount = 0
+  lastReportTime = performance.now()
+
+  // 渲染循环：始终绘制最新帧，丢弃积压帧
+  renderLoop()
+  return true
+}
+
+async function renderLoop() {
+  while (frameReader && isLowLatencyMode) {
+    try {
+      const { value: frame, done } = await frameReader.read()
+      if (done || !frame) break
+
+      // 最新帧优先：立即绘制，不等待 vsync 排队
+      if (renderCtx) {
+        renderCtx.drawImage(frame, 0, 0, renderCtx.canvas.width, renderCtx.canvas.height)
+        // 更新延迟统计（帧时间戳 → 当前时刻）
+        updateFrameLatency(frame)
+      }
+      frame.close()  // 必须立即释放 VideoFrame，否则帧池耗尽导致采集停止
+    } catch (err) {
+      console.warn('[VideoView] 帧读取中断:', err)
+      break
+    }
+  }
+}
+
+/**
+ * 真实延迟测量 — 计算帧龄（采集时刻 → 绘制时刻）
+ * VideoFrame.timestamp 是采集时刻的微秒时间戳（基于 performance.timeOrigin）
+ */
+function updateFrameLatency(frame: VideoFrame) {
+  if (frame.timestamp) {
+    // frame.timestamp 单位为微秒，帧龄不可能为负，钳为 0
+    const frameAgeMs = Math.max(0, performance.now() - frame.timestamp / 1000)
+    // 指数移动平均（α = 0.1）平滑延迟数值，避免抖动
+    latencyEma = latencyEma === 0 ? frameAgeMs : latencyEma * 0.9 + frameAgeMs * 0.1
+  }
+
+  renderFrameCount++
+
+  // 每秒向 store 上报一次真实帧龄延迟和渲染帧率
+  const now = performance.now()
+  const elapsed = now - lastReportTime
+  if (elapsed >= 1000) {
+    const fps = Math.round((renderFrameCount * 1000) / elapsed)
+    captureStore.reportRenderStats(Math.round(latencyEma), fps)
+    renderFrameCount = 0
+    lastReportTime = now
+  }
+}
+
+function stopLowLatencyRenderer() {
+  isLowLatencyMode = false
+  if (frameReader) {
+    frameReader.cancel().catch(() => {})
+    frameReader = null
+  }
+  renderCtx = null
+  lowLatencyActive.value = false
+  captureStore.setLowLatencyRender(false)
+}
+
+// ==================== Web Audio 管线 ====================
+
 // 建立 Web Audio 管线：MediaStream → Source → Delay → Gain → Destination
 function setupAudioPipeline(stream: MediaStream) {
   const audioTracks = stream.getAudioTracks()
   if (audioTracks.length === 0) return
 
-  // 创建 AudioContext，指定 48000Hz 与 UAC 设备匹配，interactive 模式优化延迟
-  audioContext = new AudioContext({ sampleRate: 48000, latencyHint: 'interactive' })
+  // 创建 AudioContext，指定 48000Hz 与 UAC 设备匹配
+  // latencyHint 传数字 0 请求尽可能小的输出缓冲（比 'interactive' 更激进）
+  audioContext = new AudioContext({ sampleRate: 48000, latencyHint: 0 })
 
   // 从 MediaStream 创建音频源
   mediaStreamSource = audioContext.createMediaStreamSource(stream)
@@ -149,22 +282,35 @@ function teardownAudioPipeline() {
   }
 }
 
-// 监听 currentStream 变化 — 设置 video.srcObject
+// 监听 currentStream 变化 — 优先低延迟 canvas 直渲，失败回退 video 元素
 watch(
   () => captureStore.currentStream,
-  (stream) => {
+  async (stream) => {
     const video = videoEl.value
-    if (!video) return
+
+    // 切流前先停掉旧的低延迟渲染器
+    stopLowLatencyRenderer()
 
     if (stream) {
-      video.srcObject = stream
-      video.play().catch((err) => {
-        console.warn('[VideoView] 自动播放被阻止:', err)
-      })
-      // 建立 Web Audio 管线，音频由 Web Audio API 接管
+      // 优先尝试低延迟渲染路径（MediaStreamTrackProcessor + Canvas）
+      const ok = await startLowLatencyRenderer(stream)
+      lowLatencyActive.value = ok
+      captureStore.setLowLatencyRender(ok)
+
+      if (!ok && video) {
+        // 回退路径：video 元素直接播放 MediaStream
+        video.srcObject = stream
+        video.play().catch((err) => {
+          console.warn('[VideoView] 自动播放被阻止:', err)
+        })
+      }
+
+      // 建立 Web Audio 管线，音频由 Web Audio API 接管（路径不变）
       setupAudioPipeline(stream)
     } else {
-      video.srcObject = null
+      if (video) {
+        video.srcObject = null
+      }
       // 清理 Web Audio 管线
       teardownAudioPipeline()
     }
@@ -199,7 +345,7 @@ watch(
   }
 )
 
-// 监听全屏状态 — 调用容器全屏 API
+// 监听全屏状态 — 调用容器全屏 API（容器同时包含 canvas 和 video）
 watch(
   () => captureStore.isFullscreen,
   async (isFullscreen) => {
@@ -242,6 +388,8 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   document.removeEventListener('fullscreenchange', onFullscreenChange)
+  // 停止低延迟渲染器
+  stopLowLatencyRenderer()
   // 清理 Web Audio 管线
   teardownAudioPipeline()
 })

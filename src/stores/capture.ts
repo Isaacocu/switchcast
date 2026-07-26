@@ -21,6 +21,12 @@ interface CaptureStoreState {
   isFullscreen: boolean
   /** 是否显示统计叠加层 */
   showStats: boolean
+  /** 低延迟渲染模式是否激活（MediaStreamTrackProcessor + Canvas 直渲） */
+  isLowLatencyRender: boolean
+  /** 渲染器上报的真实帧龄延迟（ms，采集时刻 → 绘制时刻的移动平均） */
+  rendererLatency: number
+  /** 渲染器上报的实际渲染帧率（renderLoop 中每秒计数） */
+  rendererFps: number
 }
 
 export const useCaptureStore = defineStore('capture', {
@@ -38,6 +44,9 @@ export const useCaptureStore = defineStore('capture', {
     error: null,
     isFullscreen: false,
     showStats: false,
+    isLowLatencyRender: false,
+    rendererLatency: 0,
+    rendererFps: 0,
   }),
 
   getters: {
@@ -117,6 +126,21 @@ export const useCaptureStore = defineStore('capture', {
     /** 更新统计信息（支持部分更新） */
     updateStats(stats: Partial<CaptureStats>) {
       this.stats = { ...this.stats, ...stats }
+    },
+
+    /** 设置低延迟渲染模式激活状态（由 VideoView 渲染器上报） */
+    setLowLatencyRender(active: boolean) {
+      this.isLowLatencyRender = active
+      if (!active) {
+        this.rendererLatency = 0
+        this.rendererFps = 0
+      }
+    },
+
+    /** 渲染器上报统计（真实帧龄延迟 + 实际渲染帧率） */
+    reportRenderStats(latency: number, fps: number) {
+      this.rendererLatency = latency
+      this.rendererFps = fps
     },
 
     /** 切换全屏状态 */

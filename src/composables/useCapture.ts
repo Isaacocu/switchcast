@@ -19,20 +19,11 @@ export function useCapture() {
   /** requestAnimationFrame ID */
   let rafId: number | null = null
 
-  /** 帧计数器（用于计算 FPS） */
+  /** 帧计数器（回退模式下用 rAF 估算 FPS） */
   let frameCount = 0
 
   /** 上次 FPS 计算时间戳 */
   let lastFpsTime = 0
-
-  /** rAF 请求时间戳（用于延迟测量） */
-  let rafRequestTime = 0
-
-  /** 延迟累计值 */
-  let latencySum = 0
-
-  /** 延迟采样次数 */
-  let latencyCount = 0
 
   /** 累计丢帧数 */
   let totalDroppedFrames = 0
@@ -52,7 +43,7 @@ export function useCapture() {
    * 2. 调用 getUserMedia 采集视频和音频
    * 3. 将 MediaStream 设置到 capture store
    * 4. 调用 window.capture.start 通知主进程并检查返回值
-   * 5. 开始统计监控（requestAnimationFrame 测量 FPS）
+   * 5. 开始统计监控
    */
   async function startCapture() {
     const { videoDeviceId, audioDeviceId, width, height, frameRate } = settingsStore
@@ -74,6 +65,8 @@ export function useCapture() {
           width: { ideal: width },
           height: { ideal: height },
           frameRate: { ideal: frameRate },
+          // @ts-expect-error latency 为部分浏览器支持的约束
+          latency: { ideal: 0 },  // 请求最低采集延迟
         },
         audio: audioDeviceId ? {
           deviceId: { exact: audioDeviceId },
@@ -86,6 +79,8 @@ export function useCapture() {
           sampleRate: { ideal: 48000 },
           channelCount: { ideal: 2 },
           sampleSize: { ideal: 16 },
+          // @ts-expect-error latency 为部分浏览器支持的约束
+          latency: { ideal: 0 },  // 请求最低采集延迟
         } : false,
       }
 
@@ -166,45 +161,30 @@ export function useCapture() {
   }
 
   /**
-   * 延迟测量 — 记录请求帧时间戳 vs 收到帧时间戳
-   * 返回最近一段时间的平均延迟（ms）
-   */
-  function measureLatency(): number {
-    if (latencyCount === 0) return 0
-    return Math.round(latencySum / latencyCount)
-  }
-
-  /**
    * 开始统计监控
-   * 使用 requestAnimationFrame 循环更新 FPS、延迟、分辨率、丢帧数、码率
+   *
+   * FPS / 延迟数据来源：
+   * - 低延迟模式：VideoView renderLoop 每秒上报真实帧龄延迟和渲染帧率
+   *   （帧龄 = 绘制时刻 - VideoFrame.timestamp 采集时刻，是真实的端内延迟）
+   * - 回退模式（video 元素）：rAF 计数估算 FPS，延迟同样读取渲染器上报值
+   * 此处 rAF 循环负责每秒汇总更新分辨率、丢帧数、码率等其余统计
    */
   function startStatsMonitor() {
     frameCount = 0
     lastFpsTime = performance.now()
-    latencySum = 0
-    latencyCount = 0
     totalDroppedFrames = 0
-
-    function requestNextFrame() {
-      // 记录请求 rAF 的时间戳
-      rafRequestTime = performance.now()
-      rafId = requestAnimationFrame(onFrame)
-    }
 
     function onFrame() {
       const now = performance.now()
-
-      // 计算延迟：从请求 rAF 到回调触发的耗时
-      const latency = now - rafRequestTime
-      latencySum += latency
-      latencyCount++
 
       frameCount++
 
       // 每秒更新一次统计信息
       const elapsed = now - lastFpsTime
       if (elapsed >= 1000) {
-        const fps = Math.round((frameCount * 1000) / elapsed)
+        // 低延迟模式下 FPS 来自 renderLoop 的真实帧计数，回退模式用 rAF 估算
+        const rafFps = Math.round((frameCount * 1000) / elapsed)
+        const fps = captureStore.isLowLatencyRender ? captureStore.rendererFps : rafFps
 
         // 从 MediaStreamTrack 获取分辨率信息
         const stream = captureStore.currentStream
@@ -229,7 +209,8 @@ export function useCapture() {
         const stats: Partial<CaptureStats> = {
           fps,
           resolution,
-          latency: measureLatency(),
+          // 真实帧龄延迟（由 VideoView 渲染器上报，替代原 rAF 调度延迟）
+          latency: captureStore.rendererLatency,
           droppedFrames: totalDroppedFrames,
           bitrate,
         }
@@ -239,14 +220,12 @@ export function useCapture() {
         // 重置每秒计数器
         frameCount = 0
         lastFpsTime = now
-        latencySum = 0
-        latencyCount = 0
       }
 
-      requestNextFrame()
+      rafId = requestAnimationFrame(onFrame)
     }
 
-    requestNextFrame()
+    rafId = requestAnimationFrame(onFrame)
   }
 
   /** 停止统计监控 */

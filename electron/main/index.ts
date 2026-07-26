@@ -8,6 +8,11 @@ const isMac = process.platform === 'darwin'
 // 允许无用户交互自动播放音频（Electron 默认可能需要用户交互）
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
 
+// 低延迟渲染优化
+app.commandLine.appendSwitch('disable-frame-rate-limit')  // 解除帧率上限，帧到达立即处理
+// 注意：disable-gpu-vsync 可进一步降低延迟，但可能导致画面撕裂，暂不默认开启
+// app.commandLine.appendSwitch('disable-gpu-vsync')
+
 let mainWindow: BrowserWindow | null = null
 
 function createWindow(): void {

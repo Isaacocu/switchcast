@@ -48,6 +48,15 @@ interface Window {
   windowControls: WindowControlsApi
 }
 
+declare global {
+  // MediaStreamTrackProcessor (Insertable Streams API) 类型声明
+  // Chromium 94+ 支持（Electron 31 满足），TS lib.dom 暂未收录
+  class MediaStreamTrackProcessor<T = VideoFrame> {
+    constructor(init: { track: MediaStreamTrack })
+    readonly readable: ReadableStream<T>
+  }
+}
+
 interface ImportMetaEnv {
   readonly [key: string]: any
 }
