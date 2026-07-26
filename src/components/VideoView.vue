@@ -113,14 +113,20 @@ let frameReader: ReadableStreamDefaultReader<VideoFrame> | null = null
 let renderCtx: CanvasRenderingContext2D | null = null
 let isLowLatencyMode = false
 
+/** 最新待绘制帧（读取循环持续替换，绘制循环取用） */
+let latestFrame: VideoFrame | null = null
+
 /** 帧龄移动平均值（ms），指数移动平均避免抖动 */
 let latencyEma = 0
 
-/** renderLoop 帧计数（用于 FPS 统计） */
+/** drawLoop 帧计数（用于 FPS 统计，按实际绘制帧计数） */
 let renderFrameCount = 0
 
 /** 上次统计上报时间戳 */
 let lastReportTime = 0
+
+/** 弱机自适应：rendererFps 连续低于目标帧率 70% 的秒数 */
+let lowFpsSeconds = 0
 
 async function startLowLatencyRenderer(stream: MediaStream): Promise<boolean> {
   const videoTrack = stream.getVideoTracks()[0]
@@ -158,30 +164,102 @@ async function startLowLatencyRenderer(stream: MediaStream): Promise<boolean> {
   isLowLatencyMode = true
   latencyEma = 0
   renderFrameCount = 0
+  lowFpsSeconds = 0
   lastReportTime = performance.now()
 
-  // 渲染循环：始终绘制最新帧，丢弃积压帧
-  renderLoop()
+  // 读取与绘制分离：读取循环持续吞帧（只保留最新帧），绘制循环按 rAF 节奏消费
+  pumpFrames()
+  drawLoop()
   return true
 }
 
-async function renderLoop() {
+// 读取循环：持续读帧，旧帧未绘制就被新帧替换（丢弃积压帧）
+async function pumpFrames() {
   while (frameReader && isLowLatencyMode) {
+    let frame: VideoFrame | undefined
     try {
-      const { value: frame, done } = await frameReader.read()
-      if (done || !frame) break
+      const result = await frameReader.read()
+      if (result.done || !result.value) break
+      frame = result.value
 
-      // 最新帧优先：立即绘制，不等待 vsync 排队
-      if (renderCtx) {
-        renderCtx.drawImage(frame, 0, 0, renderCtx.canvas.width, renderCtx.canvas.height)
-        // 更新延迟统计（帧时间戳 → 当前时刻）
-        updateFrameLatency(frame)
+      // 渲染器已停止：不再写入 latestFrame（由 finally 释放本帧），避免停止后残留泄漏
+      if (!isLowLatencyMode) break
+
+      // 最新帧优先：丢弃上一个未绘制的帧，避免绘制慢于帧到达时延迟累积
+      if (latestFrame) {
+        latestFrame.close()
       }
-      frame.close()  // 必须立即释放 VideoFrame，否则帧池耗尽导致采集停止
+      latestFrame = frame
+      frame = undefined  // 所有权移交 latestFrame，防止 finally 误关
     } catch (err) {
       console.warn('[VideoView] 帧读取中断:', err)
       break
+    } finally {
+      // 异常路径下确保帧被释放，否则帧池耗尽导致采集停止
+      frame?.close()
     }
+  }
+}
+
+// 绘制循环：始终绘制 latestFrame，绘制后立即释放
+function drawLoop() {
+  if (!isLowLatencyMode) return
+  const frame = latestFrame
+  if (frame && renderCtx) {
+    latestFrame = null
+    try {
+      renderCtx.drawImage(frame, 0, 0, renderCtx.canvas.width, renderCtx.canvas.height)
+      // 更新延迟统计（帧时间戳 → 当前时刻）
+      updateFrameLatency(frame)
+    } finally {
+      // drawImage 异常时也必须释放 VideoFrame
+      frame.close()
+    }
+  }
+
+  // 每秒向 store 上报一次真实帧龄延迟和渲染帧率（按实际绘制帧计数）
+  const now = performance.now()
+  const elapsed = now - lastReportTime
+  if (elapsed >= 1000) {
+    const fps = Math.round((renderFrameCount * 1000) / elapsed)
+    captureStore.reportRenderStats(Math.round(latencyEma), fps)
+    renderFrameCount = 0
+    lastReportTime = now
+
+    // 弱机自适应回退检测（可能停止渲染器，停止后不再调度 rAF）
+    checkAdaptiveFallback(fps)
+    if (!isLowLatencyMode) return
+  }
+
+  // 用 rAF 驱动绘制节奏（disable-frame-rate-limit 下 rAF 不受 60fps 上限约束）
+  requestAnimationFrame(drawLoop)
+}
+
+/**
+ * 弱机自适应回退 — canvas 2D 光栅化在弱机上可能导致帧率反降
+ * 连续 5 秒 rendererFps 低于目标帧率的 70% 时，自动回退 video 元素
+ */
+function checkAdaptiveFallback(currentFps: number) {
+  const targetFps = settingsStore.frameRate || 60
+  if (currentFps < targetFps * 0.7) {
+    lowFpsSeconds++
+    if (lowFpsSeconds >= 5) {
+      console.warn('[VideoView] 低延迟渲染帧率不达标，自动回退 video 元素')
+      fallbackToVideoElement()
+    }
+  } else {
+    lowFpsSeconds = 0
+  }
+}
+
+/** 回退到 video 元素播放当前流（stopLowLatencyRenderer 内部会同步 lowLatencyActive，v-show 随之切换） */
+function fallbackToVideoElement() {
+  stopLowLatencyRenderer()
+  const video = videoEl.value
+  const stream = captureStore.currentStream
+  if (video && stream) {
+    video.srcObject = stream
+    video.play().catch((err) => console.warn('[VideoView] 回退播放失败:', err))
   }
 }
 
@@ -198,16 +276,6 @@ function updateFrameLatency(frame: VideoFrame) {
   }
 
   renderFrameCount++
-
-  // 每秒向 store 上报一次真实帧龄延迟和渲染帧率
-  const now = performance.now()
-  const elapsed = now - lastReportTime
-  if (elapsed >= 1000) {
-    const fps = Math.round((renderFrameCount * 1000) / elapsed)
-    captureStore.reportRenderStats(Math.round(latencyEma), fps)
-    renderFrameCount = 0
-    lastReportTime = now
-  }
 }
 
 function stopLowLatencyRenderer() {
@@ -215,6 +283,11 @@ function stopLowLatencyRenderer() {
   if (frameReader) {
     frameReader.cancel().catch(() => {})
     frameReader = null
+  }
+  // 释放残留的未绘制帧，避免 VideoFrame 泄漏
+  if (latestFrame) {
+    latestFrame.close()
+    latestFrame = null
   }
   renderCtx = null
   lowLatencyActive.value = false

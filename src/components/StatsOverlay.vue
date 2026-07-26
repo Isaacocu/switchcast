@@ -14,7 +14,7 @@
       </div>
       <div class="flex items-center justify-between gap-6">
         <span class="text-white/50">渲染延迟</span>
-        <span :class="latencyColorClass">{{ captureStore.stats.latency }}ms</span>
+        <span :class="latencyColorClass">{{ latencyText }}</span>
       </div>
       <div class="flex items-center justify-between gap-6">
         <span class="text-white/50">丢帧</span>
@@ -42,9 +42,16 @@ const fpsColorClass = computed(() => {
   return 'text-red-400'
 })
 
-/** 渲染延迟颜色 — 根据真实帧龄延迟高低显示不同颜色 */
+/** 渲染延迟显示文本 — 回退模式下延迟不可测（latency < 0）显示 "—" */
+const latencyText = computed(() => {
+  const latency = captureStore.stats.latency
+  return latency < 0 ? '—' : `${latency}ms`
+})
+
+/** 渲染延迟颜色 — 根据真实帧龄延迟高低显示不同颜色，不可测时灰色 */
 const latencyColorClass = computed(() => {
   const latency = captureStore.stats.latency
+  if (latency < 0) return 'text-white/40'
   if (latency <= 20) return 'text-green-400'
   if (latency <= 50) return 'text-yellow-400'
   return 'text-red-400'

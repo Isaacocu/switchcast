@@ -164,9 +164,9 @@ export function useCapture() {
    * 开始统计监控
    *
    * FPS / 延迟数据来源：
-   * - 低延迟模式：VideoView renderLoop 每秒上报真实帧龄延迟和渲染帧率
+   * - 低延迟模式：VideoView 渲染器每秒上报真实帧龄延迟和渲染帧率
    *   （帧龄 = 绘制时刻 - VideoFrame.timestamp 采集时刻，是真实的端内延迟）
-   * - 回退模式（video 元素）：rAF 计数估算 FPS，延迟同样读取渲染器上报值
+   * - 回退模式（video 元素）：rAF 计数估算 FPS，延迟不可测，置 -1 由 OSD 显示 "—"
    * 此处 rAF 循环负责每秒汇总更新分辨率、丢帧数、码率等其余统计
    */
   function startStatsMonitor() {
@@ -182,7 +182,7 @@ export function useCapture() {
       // 每秒更新一次统计信息
       const elapsed = now - lastFpsTime
       if (elapsed >= 1000) {
-        // 低延迟模式下 FPS 来自 renderLoop 的真实帧计数，回退模式用 rAF 估算
+        // 低延迟模式下 FPS 来自 drawLoop 的真实帧计数，回退模式用 rAF 估算
         const rafFps = Math.round((frameCount * 1000) / elapsed)
         const fps = captureStore.isLowLatencyRender ? captureStore.rendererFps : rafFps
 
@@ -206,11 +206,13 @@ export function useCapture() {
           fps
         )
 
+        // 真实帧龄延迟仅低延迟渲染器可测；回退模式下 video 元素内部无法读取帧龄，置 -1 表示不可测
+        const latency = captureStore.isLowLatencyRender ? captureStore.rendererLatency : -1
+
         const stats: Partial<CaptureStats> = {
           fps,
           resolution,
-          // 真实帧龄延迟（由 VideoView 渲染器上报，替代原 rAF 调度延迟）
-          latency: captureStore.rendererLatency,
+          latency,
           droppedFrames: totalDroppedFrames,
           bitrate,
         }
