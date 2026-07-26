@@ -69,7 +69,8 @@
         "from": "build/icon.png",
         "to": "icon.png"
       }
-    ]
+    ],
+    "afterPack": "scripts/adhoc-sign.cjs"
   },
   "author": "SwitchCast"
 }
