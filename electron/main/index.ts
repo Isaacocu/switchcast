@@ -13,6 +13,9 @@ app.commandLine.appendSwitch('disable-frame-rate-limit')  // 解除帧率上限�
 // 注意：disable-gpu-vsync 可进一步降低延迟，但可能导致画面撕裂，暂不默认开启
 // app.commandLine.appendSwitch('disable-gpu-vsync')
 
+// 视频采集使用 GPU 内存缓冲池，减少捕获管线 CPU 拷贝
+app.commandLine.appendSwitch('video-capture-use-gpu-memory-buffer')
+
 let mainWindow: BrowserWindow | null = null
 
 function createWindow(): void {

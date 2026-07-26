@@ -62,9 +62,10 @@ export function useCapture() {
       const constraints: MediaStreamConstraints = {
         video: {
           deviceId: { exact: videoDeviceId },
-          width: { ideal: width },
-          height: { ideal: height },
-          frameRate: { ideal: frameRate },
+          // 收紧分辨率/帧率约束区间，引导驱动协商采集卡原生格式（避免 MJPEG 转码路径）
+          width: { min: Math.max(0, width - 16), ideal: width, max: width + 16 },
+          height: { min: Math.max(0, height - 16), ideal: height, max: height + 16 },
+          frameRate: { min: Math.max(1, frameRate - 5), ideal: frameRate, max: frameRate + 5 },
           // @ts-expect-error latency 为部分浏览器支持的约束
           latency: { ideal: 0 },  // 请求最低采集延迟
         },
@@ -86,6 +87,17 @@ export function useCapture() {
 
       // 调用 getUserMedia 采集视频和音频流
       const stream = await navigator.mediaDevices.getUserMedia(constraints)
+
+      // 采集格式诊断 — 输出实际协商结果（帮助确认是否命中 MJPEG 等转码路径）
+      const vTrack = stream.getVideoTracks()[0]
+      if (vTrack) {
+        const s = vTrack.getSettings()
+        console.info('[capture] 视频协商结果:', JSON.stringify({
+          width: s.width, height: s.height, frameRate: s.frameRate,
+          // @ts-expect-error 部分平台暴露
+          latency: s.latency,
+        }))
+      }
 
       // 将流设置到 store
       captureStore.setStream(stream)

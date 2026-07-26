@@ -106,12 +106,19 @@ let delayNode: DelayNode | null = null
 let gainNode: GainNode | null = null
 
 // ==================== 低延迟渲染器 ====================
-// MediaStreamTrackProcessor 直接读帧绘制到 canvas，绕过 <video> 元素
-// 内部的抖动缓冲（1-3 帧 ≈ 16-50ms），实现"最新帧优先"策略
+// MediaStreamTrackProcessor 直接读帧，三级绘制链：
+// WebGL2（texImage2D 直传 GPU 纹理）→ canvas 2D（drawImage）→ video 元素
+// canvas 2D 的 drawImage(VideoFrame) 在 macOS 上可能走 CPU 光栅化路径，
+// WebGL texImage2D 可将 VideoFrame 直接上传 GPU 纹理（快 3-5ms）
 
 let frameReader: ReadableStreamDefaultReader<VideoFrame> | null = null
 let renderCtx: CanvasRenderingContext2D | null = null
 let isLowLatencyMode = false
+
+// WebGL2 渲染器状态
+let glCtx: WebGL2RenderingContext | null = null
+let glTexture: WebGLTexture | null = null
+let usingWebGL = false
 
 /** 最新待绘制帧（读取循环持续替换，绘制循环取用） */
 let latestFrame: VideoFrame | null = null
@@ -127,6 +134,79 @@ let lastReportTime = 0
 
 /** 弱机自适应：rendererFps 连续低于目标帧率 70% 的秒数 */
 let lowFpsSeconds = 0
+
+/**
+ * 初始化 WebGL2 渲染器（全屏三角形 + 纹理采样）
+ * 同一 canvas 元素首次 getContext 决定类型：先试 WebGL2，失败后再试 2D 天然兼容
+ */
+function initWebGLRenderer(canvas: HTMLCanvasElement): boolean {
+  const gl = canvas.getContext('webgl2', {
+    desynchronized: true,   // 绕过合成器 vsync
+    alpha: false,
+    antialias: false,       // 视频渲染无需抗锯齿
+    depth: false,
+    stencil: false,
+    powerPreference: 'high-performance',
+  })
+  if (!gl) return false
+
+  const vsSource = `#version 300 es
+    // 全屏三角形（无需顶点缓冲，gl_VertexID 生成）
+    out vec2 vUV;
+    void main() {
+      vec2 pos = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
+      vUV = vec2(pos.x, 1.0 - pos.y);
+      gl_Position = vec4(pos * 2.0 - 1.0, 0.0, 1.0);
+    }`
+  const fsSource = `#version 300 es
+    precision mediump float;
+    uniform sampler2D uTex;
+    in vec2 vUV;
+    out vec4 outColor;
+    void main() { outColor = texture(uTex, vUV); }`
+
+  const compile = (type: number, src: string) => {
+    const sh = gl.createShader(type)!
+    gl.shaderSource(sh, src)
+    gl.compileShader(sh)
+    if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
+      console.warn('[VideoView] shader 编译失败:', gl.getShaderInfoLog(sh))
+      return null
+    }
+    return sh
+  }
+  const vs = compile(gl.VERTEX_SHADER, vsSource)
+  const fs = compile(gl.FRAGMENT_SHADER, fsSource)
+  if (!vs || !fs) return false
+
+  const program = gl.createProgram()!
+  gl.attachShader(program, vs)
+  gl.attachShader(program, fs)
+  gl.linkProgram(program)
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) return false
+  gl.useProgram(program)
+
+  glTexture = gl.createTexture()
+  gl.bindTexture(gl.TEXTURE_2D, glTexture)
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+
+  glCtx = gl
+  return true
+}
+
+/** WebGL 绘制一帧（VideoFrame 直接上传 GPU 纹理） */
+function drawFrameWebGL(frame: VideoFrame) {
+  const gl = glCtx!
+  // viewport 每帧设置，分辨率变化时天然适配
+  gl.viewport(0, 0, gl.canvas.width, gl.canvas.height)
+  gl.bindTexture(gl.TEXTURE_2D, glTexture)
+  // texImage2D 直接接受 VideoFrame，GPU 路径上传
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, frame)
+  gl.drawArrays(gl.TRIANGLES, 0, 3)
+}
 
 async function startLowLatencyRenderer(stream: MediaStream): Promise<boolean> {
   const videoTrack = stream.getVideoTracks()[0]
@@ -148,15 +228,24 @@ async function startLowLatencyRenderer(stream: MediaStream): Promise<boolean> {
   canvas.width = settings.width || 1920
   canvas.height = settings.height || 1080
 
-  // desynchronized: true 允许 canvas 绕过合成器 vsync 同步（关键低延迟参数）
-  renderCtx = canvas.getContext('2d', { desynchronized: true, alpha: false })
-  if (!renderCtx) return false
+  // 优先 WebGL2（texImage2D 直传 GPU 纹理，绕过 canvas 2D 可能的 CPU 光栅化）
+  // 注意：同一 canvas 首次 getContext 决定类型，先试 WebGL2 失败再试 2D 天然兼容
+  usingWebGL = initWebGLRenderer(canvas)
+  if (usingWebGL) {
+    console.info('[VideoView] 使用 WebGL2 渲染路径')
+  } else {
+    // 第二级回退：canvas 2D（desynchronized: true 绕过合成器 vsync 同步）
+    renderCtx = canvas.getContext('2d', { desynchronized: true, alpha: false })
+    if (!renderCtx) return false
+    console.info('[VideoView] WebGL2 不可用，使用 canvas 2D 渲染路径')
+  }
 
   try {
     const processor = new MediaStreamTrackProcessor({ track: videoTrack })
     frameReader = processor.readable.getReader()
   } catch (err) {
     console.warn('[VideoView] MediaStreamTrackProcessor 创建失败，回退到 video 元素:', err)
+    teardownGLResources()
     renderCtx = null
     return false
   }
@@ -205,14 +294,19 @@ async function pumpFrames() {
 function drawLoop() {
   if (!isLowLatencyMode) return
   const frame = latestFrame
-  if (frame && renderCtx) {
+  if (frame && (usingWebGL ? glCtx : renderCtx)) {
     latestFrame = null
     try {
-      renderCtx.drawImage(frame, 0, 0, renderCtx.canvas.width, renderCtx.canvas.height)
+      if (usingWebGL) {
+        // WebGL2 路径：VideoFrame 直接上传 GPU 纹理
+        drawFrameWebGL(frame)
+      } else {
+        renderCtx!.drawImage(frame, 0, 0, renderCtx!.canvas.width, renderCtx!.canvas.height)
+      }
       // 更新延迟统计（帧时间戳 → 当前时刻）
       updateFrameLatency(frame)
     } finally {
-      // drawImage 异常时也必须释放 VideoFrame
+      // 绘制异常时也必须释放 VideoFrame
       frame.close()
     }
   }
@@ -236,7 +330,7 @@ function drawLoop() {
 }
 
 /**
- * 弱机自适应回退 — canvas 2D 光栅化在弱机上可能导致帧率反降
+ * 弱机自适应回退 — canvas 光栅化在弱机上可能导致帧率反降
  * 连续 5 秒 rendererFps 低于目标帧率的 70% 时，自动回退 video 元素
  */
 function checkAdaptiveFallback(currentFps: number) {
@@ -278,6 +372,16 @@ function updateFrameLatency(frame: VideoFrame) {
   renderFrameCount++
 }
 
+/** 释放 WebGL 资源（WebGL context 无需显式销毁，随 canvas 生命周期回收） */
+function teardownGLResources() {
+  if (glCtx && glTexture) {
+    glCtx.deleteTexture(glTexture)
+  }
+  glTexture = null
+  glCtx = null
+  usingWebGL = false
+}
+
 function stopLowLatencyRenderer() {
   isLowLatencyMode = false
   if (frameReader) {
@@ -289,6 +393,8 @@ function stopLowLatencyRenderer() {
     latestFrame.close()
     latestFrame = null
   }
+  // 清理 WebGL 资源
+  teardownGLResources()
   renderCtx = null
   lowLatencyActive.value = false
   captureStore.setLowLatencyRender(false)
@@ -365,7 +471,7 @@ watch(
     stopLowLatencyRenderer()
 
     if (stream) {
-      // 优先尝试低延迟渲染路径（MediaStreamTrackProcessor + Canvas）
+      // 优先尝试低延迟渲染路径（MediaStreamTrackProcessor + WebGL2/Canvas）
       const ok = await startLowLatencyRenderer(stream)
       lowLatencyActive.value = ok
       captureStore.setLowLatencyRender(ok)
