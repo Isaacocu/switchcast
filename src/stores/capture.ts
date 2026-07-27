@@ -27,6 +27,8 @@ interface CaptureStoreState {
   rendererLatency: number
   /** 渲染器上报的实际渲染帧率（renderLoop 中每秒计数） */
   rendererFps: number
+  /** 原生采集渲染模式是否激活（macOS AVCaptureSession + Metal 直渲 NSView） */
+  isNativeRender: boolean
 }
 
 export const useCaptureStore = defineStore('capture', {
@@ -47,6 +49,7 @@ export const useCaptureStore = defineStore('capture', {
     isLowLatencyRender: false,
     rendererLatency: 0,
     rendererFps: 0,
+    isNativeRender: false,
   }),
 
   getters: {
@@ -132,6 +135,20 @@ export const useCaptureStore = defineStore('capture', {
     setLowLatencyRender(active: boolean) {
       this.isLowLatencyRender = active
       if (!active) {
+        this.rendererLatency = 0
+        this.rendererFps = 0
+      }
+    },
+
+    /**
+     * 设置原生采集渲染模式激活状态（由 useCapture 在原生采集启停时调用）
+     * 原生模式下视频由 Metal layer 直渲窗口 NSView，不经过 canvas/video 元素
+     */
+    setNativeRender(active: boolean) {
+      this.isNativeRender = active
+      if (!active) {
+        // 原生模式关闭时同步重置低延迟标记，避免 VideoView 误判
+        this.isLowLatencyRender = false
         this.rendererLatency = 0
         this.rendererFps = 0
       }

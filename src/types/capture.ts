@@ -16,6 +16,9 @@ export interface DeviceList {
   audio: AudioDevice[]
 }
 
+/** 采集模式：auto 自动选择 / native 原生加速 / webview 浏览器采集 */
+export type CaptureMode = 'auto' | 'native' | 'webview'
+
 /** 采集配置 */
 export interface CaptureConfig {
   videoDeviceId: string
@@ -23,6 +26,8 @@ export interface CaptureConfig {
   width: number
   height: number
   frameRate: number
+  /** 采集模式（可选，未指定时由 AppSettings.captureMode 决定） */
+  captureMode?: CaptureMode
 }
 
 /** 采集统计信息 */
@@ -76,4 +81,6 @@ export interface AppSettings {
   recordingVideoCodec: 'h264' | 'h265'
   recordingVideoBitrate: number
   recordingAudioBitrate: number
+  /** 采集模式：auto 自动选择 / native 原生加速 / webview 浏览器采集 */
+  captureMode: CaptureMode
 }

@@ -1,18 +1,20 @@
 <template>
   <div
     ref="containerRef"
-    class="relative w-full h-full bg-black flex items-center justify-center overflow-hidden"
+    :class="['relative w-full h-full flex items-center justify-center overflow-hidden', nativeActive ? 'bg-transparent' : 'bg-black']"
   >
     <!-- 低延迟渲染画布（MediaStreamTrackProcessor 直渲，最新帧优先） -->
+    <!-- 原生模式下隐藏，容器透明露出主进程 attach 的 Metal layer -->
     <canvas
-      v-show="lowLatencyActive"
+      v-show="!nativeActive && lowLatencyActive"
       ref="canvasEl"
       class="max-w-full max-h-full object-contain"
     />
 
     <!-- 视频元素（MediaStreamTrackProcessor 不可用时的回退路径） -->
+    <!-- 原生模式下隐藏，容器透明露出主进程 attach 的 Metal layer -->
     <video
-      v-show="!lowLatencyActive"
+      v-show="!nativeActive && !lowLatencyActive"
       ref="videoEl"
       class="max-w-full max-h-full object-contain"
       autoplay
@@ -79,7 +81,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useCaptureStore } from '@/stores/capture'
 import { useSettingsStore } from '@/stores/settings'
 import StatsOverlay from './StatsOverlay.vue'
@@ -98,6 +100,14 @@ const containerRef = ref<HTMLDivElement | null>(null)
 
 /** 低延迟模式是否激活（控制 canvas / video 显示切换） */
 const lowLatencyActive = ref(false)
+
+/**
+ * 原生采集渲染模式是否激活
+ * 原生模式下视频由主进程 Metal layer 直渲窗口 NSView，
+ * canvas/video 元素均隐藏，容器背景透明以露出 Metal 层。
+ * 状态来源于 capture store（由 useCapture 在原生采集启停时设置）。
+ */
+const nativeActive = computed(() => captureStore.isNativeRender)
 
 // Web Audio API 管线
 let audioContext: AudioContext | null = null
@@ -462,6 +472,7 @@ function teardownAudioPipeline() {
 }
 
 // 监听 currentStream 变化 — 优先低延迟 canvas 直渲，失败回退 video 元素
+// 原生模式下仅处理音频管线（视频由主进程 Metal layer 直渲，不经 canvas/video）
 watch(
   () => captureStore.currentStream,
   async (stream) => {
@@ -471,6 +482,14 @@ watch(
     stopLowLatencyRenderer()
 
     if (stream) {
+      // 原生采集模式：视频由 Metal layer 直渲窗口 NSView，不启动 canvas/video 渲染器
+      // 仅建立音频管线（音频路径与 WebView 一致），不覆盖 isLowLatencyRender/isNativeRender
+      if (nativeActive.value) {
+        lowLatencyActive.value = false
+        setupAudioPipeline(stream)
+        return
+      }
+
       // 优先尝试低延迟渲染路径（MediaStreamTrackProcessor + WebGL2/Canvas）
       const ok = await startLowLatencyRenderer(stream)
       lowLatencyActive.value = ok
@@ -553,7 +572,7 @@ function onFullscreenChange() {
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
   document.addEventListener('fullscreenchange', onFullscreenChange)
 
   // 音频由 Web Audio API 接管，video 元素始终静音
@@ -562,6 +581,20 @@ onMounted(() => {
   if (video) {
     video.volume = settingsStore.volume
     video.muted = true
+  }
+
+  // 原生采集可用性检测 — 渲染进程无法获取 NSView 句柄，
+  // Metal layer 的 attach 由主进程在 capture-manager.start 时通过
+  // getNativeWindowHandle 自动完成，渲染进程无需主动触发
+  if (window.nativeCapture) {
+    try {
+      const available = await window.nativeCapture.isAvailable()
+      if (available) {
+        console.info('[VideoView] 原生采集模块可用，视频将走 Metal 直渲路径')
+      }
+    } catch (err) {
+      console.warn('[VideoView] 原生采集可用性查询失败:', err)
+    }
   }
 })
 

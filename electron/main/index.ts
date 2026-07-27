@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, systemPreferences } from 'electron'
 import { join } from 'path'
 import { registerCaptureIpc } from './ipc/capture'
+import { getCaptureManager } from './services/capture-manager'
 
 // 跨平台判断
 const isMac = process.platform === 'darwin'
@@ -110,6 +111,8 @@ app.whenReady().then(async () => {
 
   createWindow()
 
+  // Phase 3: 原生模块在首次采集时按需加载，无需预初始化
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow()
@@ -120,5 +123,14 @@ app.whenReady().then(async () => {
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit()
+  }
+})
+
+// 应用退出前清理原生采集模块（threadsafe function 必须 release，否则退出挂起）
+app.on('before-quit', () => {
+  try {
+    getCaptureManager().destroy()
+  } catch (err) {
+    console.warn('[main] 原生模块清理失败:', err)
   }
 })

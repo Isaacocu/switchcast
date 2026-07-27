@@ -8,6 +8,14 @@ export default defineConfig({
     build: {
       lib: {
         entry: resolve(__dirname, 'electron/main/index.ts')
+      },
+      rollupOptions: {
+        // 原生采集模块为本地路径 require，运行时相对 out/main/ 解析到项目根，
+        // 构建时不可打包，需显式外置避免 rollup 解析失败
+        external: [
+          'capture-addon',
+          '../../native/capture-addon/js/index.js'
+        ]
       }
     }
   },

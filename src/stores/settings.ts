@@ -18,6 +18,7 @@ const defaultSettings: AppSettings = {
   recordingVideoCodec: 'h264',
   recordingVideoBitrate: 8000,
   recordingAudioBitrate: 128,
+  captureMode: 'auto',
 }
 
 export const useSettingsStore = defineStore('settings', {
@@ -72,6 +73,7 @@ export const useSettingsStore = defineStore('settings', {
           recordingVideoCodec: this.recordingVideoCodec,
           recordingVideoBitrate: this.recordingVideoBitrate,
           recordingAudioBitrate: this.recordingAudioBitrate,
+          captureMode: this.captureMode,
         }
         localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
       } catch (err) {

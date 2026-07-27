@@ -43,6 +43,29 @@ const captureApi = {
 }
 
 /**
+ * 原生采集 API — 通过 contextBridge 暴露给渲染进程
+ *
+ * 渲染进程通过 window.nativeCapture 访问以下方法：
+ * - isAvailable()  查询原生采集模块是否可用（仅 macOS）
+ * - attach(handle) 将 Metal layer attach 到指定 NSView
+ * - onStats(cb)    注册原生采集统计回调（返回取消订阅函数）
+ */
+const nativeCaptureApi = {
+  /** 查询原生采集模块是否可用 */
+  isAvailable: (): Promise<boolean> => ipcRenderer.invoke('native:isAvailable'),
+
+  /** 将原生 Metal layer attach 到指定 NSView */
+  attach: (handle: Buffer): Promise<boolean> => ipcRenderer.invoke('native:attach', handle),
+
+  /** 注册原生采集统计回调（fps/延迟），返回取消订阅函数 */
+  onStats: (callback: (stats: { fps: number; latency: number }) => void): (() => void) => {
+    const handler = (_event: unknown, stats: { fps: number; latency: number }) => callback(stats)
+    ipcRenderer.on('capture:nativeStats', handler)
+    return () => ipcRenderer.off('capture:nativeStats', handler)
+  },
+}
+
+/**
  * Electron 平台信息 API
  */
 const electronApi = {
@@ -67,6 +90,9 @@ const windowApi = {
 
 // 暴露采集 API 到渲染进程
 contextBridge.exposeInMainWorld('capture', captureApi)
+
+// 暴露原生采集 API 到渲染进程
+contextBridge.exposeInMainWorld('nativeCapture', nativeCaptureApi)
 
 // 暴露 Electron 平台信息到渲染进程
 contextBridge.exposeInMainWorld('electron', electronApi)

@@ -10,9 +10,14 @@ import type { CaptureConfig } from '../../../src/types/capture'
  * - capture:start       — 启动采集（传入 CaptureConfig）
  * - capture:stop        — 停止采集
  *
+ * 原生采集 IPC（新增）：
+ * - native:isAvailable  — 查询原生采集模块是否可用
+ * - native:attach       — 将 Metal layer attach 到指定 NSView
+ *
  * 事件推送（主进程 → 渲染进程）：
- * - capture:state — 采集状态变更通知
- * - capture:error — 采集错误通知
+ * - capture:state       — 采集状态变更通知
+ * - capture:error       — 采集错误通知
+ * - capture:nativeStats — 原生采集统计信息推送（fps/延迟）
  */
 export function registerCaptureIpc(ipcMainInstance: typeof ipcMain): void {
   const captureManager = getCaptureManager()
@@ -56,5 +61,20 @@ export function registerCaptureIpc(ipcMainInstance: typeof ipcMain): void {
         error: err instanceof Error ? err.message : String(err)
       }
     }
+  })
+
+  // ==================== 原生采集 IPC（新增，不影响现有通道） ====================
+
+  // 查询原生采集模块是否可用（渲染进程据此决定是否走原生分支）
+  ipcMainInstance.handle('native:isAvailable', () => {
+    updateMainWindow()
+    return captureManager.isNativeAvailable()
+  })
+
+  // 将原生 Metal layer attach 到指定 NSView（渲染进程传入句柄）
+  // 注意：渲染进程通常无法获取 NSView，主流程由 capture-manager.start 自动 attach，
+  // 此通道保留供需要时显式触发 attach 的场景
+  ipcMainInstance.handle('native:attach', (_event, nsViewHandle: Buffer) => {
+    return captureManager.attachToWindow(nsViewHandle)
   })
 }

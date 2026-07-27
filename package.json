@@ -8,11 +8,14 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "postinstall": "electron-builder install-app-deps",
+    "build-native": "bash scripts/build-native.sh",
     "dist": "electron-vite build && electron-builder --mac --win",
     "dist:mac": "electron-vite build && electron-builder --mac",
     "dist:win": "electron-vite build && electron-builder --win"
   },
   "dependencies": {
+    "bindings": "^1.5.0",
+    "node-addon-api": "^7.0.0",
     "pinia": "^2.1.0",
     "vue": "^3.4.0"
   },
@@ -68,6 +71,11 @@
       {
         "from": "build/icon.png",
         "to": "icon.png"
+      },
+      {
+        "from": "native/capture-addon/build/Release/capture_addon.node",
+        "to": "capture_addon.node",
+        "filter": ["**/*"]
       }
     ],
     "afterPack": "scripts/adhoc-sign.cjs"

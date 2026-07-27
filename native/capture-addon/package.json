@@ -1,0 +1,11 @@
+{
+  "name": "capture-addon",
+  "version": "1.0.0",
+  "description": "SwitchCast native capture addon (macOS only)",
+  "main": "js/index.js",
+  "gypfile": true,
+  "dependencies": {
+    "node-addon-api": "^7.0.0",
+    "bindings": "^1.5.0"
+  }
+}

@@ -98,6 +98,20 @@
                     />
                   </div>
                 </div>
+
+                <!-- 采集模式（仅 macOS 显示） -->
+                <div v-if="isMac" class="space-y-2 mt-4">
+                  <label class="text-sm text-text-primary">采集模式</label>
+                  <select
+                    v-model="form.captureMode"
+                    class="w-full bg-bg-card border border-border-main rounded-md px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary transition-colors"
+                  >
+                    <option value="auto">自动（推荐）</option>
+                    <option value="native">原生加速</option>
+                    <option value="webview">WebView</option>
+                  </select>
+                  <p class="text-xs text-text-secondary/70">原生加速使用 AVFoundation 直接采集，延迟更低但仅支持 macOS</p>
+                </div>
               </section>
 
               <!-- 分隔线 -->
@@ -192,6 +206,9 @@ const emit = defineEmits<{
 
 const settingsStore = useSettingsStore()
 
+/** 是否为 macOS（采集模式选项仅 macOS 显示） */
+const isMac = ref(window.electron?.platform === 'darwin')
+
 /** 本地表单状态 — 对话框打开时从 store 同步 */
 const form = reactive({
   width: 1920,
@@ -204,6 +221,7 @@ const form = reactive({
   recordingVideoCodec: 'h264' as AppSettings['recordingVideoCodec'],
   recordingVideoBitrate: 8000,
   recordingAudioBitrate: 128,
+  captureMode: 'auto' as AppSettings['captureMode'],
 })
 
 /** 分辨率预设值 */
@@ -224,6 +242,7 @@ function syncFromStore() {
   form.recordingVideoCodec = settingsStore.recordingVideoCodec
   form.recordingVideoBitrate = settingsStore.recordingVideoBitrate
   form.recordingAudioBitrate = settingsStore.recordingAudioBitrate
+  form.captureMode = settingsStore.captureMode
 
   // 推断分辨率预设
   if (form.width === 1920 && form.height === 1080) {
@@ -283,6 +302,7 @@ function onSave() {
     recordingVideoCodec: form.recordingVideoCodec,
     recordingVideoBitrate: form.recordingVideoBitrate,
     recordingAudioBitrate: form.recordingAudioBitrate,
+    captureMode: form.captureMode,
   })
   settingsStore.saveToStorage()
   emit('close')

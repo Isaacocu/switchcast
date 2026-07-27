@@ -39,6 +39,16 @@ interface WindowControlsApi {
   close: () => void
 }
 
+/** window.nativeCapture — 原生采集 API（由 preload contextBridge 暴露，仅 macOS 可用） */
+interface NativeCaptureApi {
+  /** 查询原生采集模块是否可用（已成功加载） */
+  isAvailable: () => Promise<boolean>
+  /** 将原生 Metal layer attach 到指定 NSView */
+  attach: (handle: Buffer) => Promise<boolean>
+  /** 注册原生采集统计回调（fps/延迟），返回取消订阅函数 */
+  onStats: (callback: (stats: { fps: number; latency: number }) => void) => () => void
+}
+
 interface Window {
   /** 采集 API */
   capture: CaptureApi
@@ -46,6 +56,8 @@ interface Window {
   electron: ElectronApi
   /** 窗口控制 API */
   windowControls: WindowControlsApi
+  /** 原生采集 API（仅 macOS 注入，其他平台为 undefined） */
+  nativeCapture: NativeCaptureApi
 }
 
 declare global {
