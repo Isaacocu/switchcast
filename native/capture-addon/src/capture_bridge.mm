@@ -159,7 +159,7 @@ static void report_error(const char *message) {
  * 在 sCaptureQueue 上执行，实现零拷贝 Metal 渲染
  */
 - (void)captureOutput:(AVCaptureOutput *)output
-   didOutputSampleBuffer:(CMSampleBuffer *)sampleBuffer
+   didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer
         fromConnection:(AVCaptureConnection *)connection {
 
     // 记录采集时间戳（PTS 起点）
@@ -261,7 +261,7 @@ static void report_error(const char *message) {
  * 丢帧回调
  */
 - (void)captureOutput:(AVCaptureOutput *)output
-   didDropSampleBuffer:(CMSampleBuffer *)sampleBuffer
+   didDropSampleBuffer:(CMSampleBufferRef)sampleBuffer
         fromConnection:(AVCaptureConnection *)connection {
     // 丢帧时不做处理，由 alwaysDiscardsLateVideoFrames=YES 控制
 }
@@ -562,7 +562,7 @@ const char *list_video_devices() {
                                       position:AVCaptureDevicePositionUnspecified];
 
         NSMutableArray *devices = [NSMutableArray array];
-        for (AVCaptureDevice *device in session.devices) {
+        for (AVCaptureDevice *device in devices) {
             [devices addObject:@{
                 @"deviceId": device.uniqueID ?: @"",
                 @"label": device.localizedName ?: @""

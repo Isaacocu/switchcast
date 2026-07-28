@@ -335,12 +335,12 @@ static napi_value MethodOn(napi_env env, napi_callback_info info) {
             args[1],          // JS 回调函数
             nullptr,          // async_resource（可选）
             work_name,        // async_resource_name（用于诊断）
-            CallStatsJs,      // call_js_callback
             0,                // max_queue_size（0 = 不限制）
             1,                // initial_thread_count（采集线程 = 1）
             nullptr,          // finalize_data
             TsfnFinalize,     // finalize_callback
             nullptr,          // context
+            CallStatsJs,      // call_js_callback
             &sStatsTsfn       // 输出：threadsafe function
         );
 
@@ -363,12 +363,12 @@ static napi_value MethodOn(napi_env env, napi_callback_info info) {
             args[1],          // JS 回调函数
             nullptr,          // async_resource
             work_name,        // async_resource_name
-            CallErrorJs,      // call_js_callback
             0,                // max_queue_size
             1,                // initial_thread_count
             nullptr,          // finalize_data
             TsfnFinalize,     // finalize_callback
             nullptr,          // context
+            CallErrorJs,      // call_js_callback
             &sErrorTsfn       // 输出
         );
 
