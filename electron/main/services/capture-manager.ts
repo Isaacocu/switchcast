@@ -78,7 +78,7 @@ class CaptureManager {
     if (this.nativeAddon !== null) return true
     try {
       // 原生模块路径基于编译后输出目录 out/main/，上溯两级到项目根
-      const addon = require('../../native/capture-addon/js/index.js')
+      const addon = require('capture-addon')
       if (addon) {
         this.nativeAddon = addon
         // 注册原生 stats 回调 — 推送到渲染进程供 OSD 显示

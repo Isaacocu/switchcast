@@ -17,7 +17,8 @@
     "bindings": "^1.5.0",
     "node-addon-api": "^7.0.0",
     "pinia": "^2.1.0",
-    "vue": "^3.4.0"
+    "vue": "^3.4.0",
+    "capture-addon": "file:./native/capture-addon"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
@@ -75,7 +76,9 @@
       {
         "from": "native/capture-addon/build/Release/capture_addon.node",
         "to": "capture_addon.node",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "afterPack": "scripts/adhoc-sign.cjs"
