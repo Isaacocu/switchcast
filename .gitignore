@@ -23,3 +23,5 @@ dist/
 dist/builder-debug.yml
 dist/builder-effective-config.yaml
 dist/*.blockmap
+native/capture-addon/build/
+native/capture-addon/node_modules/
