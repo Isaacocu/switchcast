@@ -63,7 +63,6 @@ export interface StreamConfig {
   url: string
   streamKey: string
   videoBitrate: number
-  audioBitrate: number
   keyframeInterval: number
 }
 
@@ -83,4 +82,6 @@ export interface AppSettings {
   recordingAudioBitrate: number
   /** 采集模式：auto 自动选择 / native 原生加速 / webview 浏览器采集 */
   captureMode: CaptureMode
+  /** 启动时检查更新（UI 层是否展示自动发现的更新提示） */
+  checkUpdatesOnLaunch: boolean
 }

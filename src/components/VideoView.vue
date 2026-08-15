@@ -362,6 +362,9 @@ function fallbackToVideoElement() {
   const video = videoEl.value
   const stream = captureStore.currentStream
   if (video && stream) {
+    // 防御加固：音频仅走 Web Audio 管线，video 元素必须恒静音，
+    // 否则回退路径下 video 音轨与 GainNode 双放形成回音
+    video.muted = true
     video.srcObject = stream
     video.play().catch((err) => console.warn('[VideoView] 回退播放失败:', err))
   }
@@ -535,11 +538,8 @@ watch(
       // 使用 setTargetAtTime 实现平滑过渡，避免阶跃变化
       gainNode.gain.setTargetAtTime(volume, audioContext!.currentTime, 0.01)
     }
-    // 同时保持 video.volume 同步（虽然 video 被 muted，但保持一致性）
-    if (videoEl.value) {
-      videoEl.value.volume = volume
-      videoEl.value.muted = volume === 0
-    }
+    // 音量职责完全由 GainNode 承担；<video> 必须恒静音，
+    // 任何对 video.volume/muted 的同步都会在回退路径造成双放回音
   }
 )
 

@@ -6,6 +6,7 @@ import type {
   CaptureError,
   CaptureStats
 } from '../../../src/types/capture'
+import { getLogger } from './logger'
 
 /**
  * 采集管理器 — 单例模式
@@ -90,11 +91,14 @@ class CaptureManager {
           this.emitError({ code: 'NATIVE_ERROR', message: error })
           this.nativeActive = false
         })
-        console.info('[capture-manager] 原生采集模块加载成功')
+        getLogger().info('capture-manager', '原生采集模块加载成功')
         return true
       }
     } catch (err) {
-      console.warn('[capture-manager] 原生模块加载失败:', err)
+      getLogger().warn(
+        'capture-manager',
+        `原生模块加载失败: ${err instanceof Error ? err.message : String(err)}`
+      )
     }
     return false
   }
@@ -115,7 +119,10 @@ class CaptureManager {
           audio: []  // 音频仍由渲染进程枚举（UAC 设备走 WebAudio 管线）
         }
       } catch (err) {
-        console.warn('[capture-manager] 原生设备枚举失败，回退渲染进程枚举:', err)
+        getLogger().warn(
+          'capture-manager',
+          `原生设备枚举失败，回退渲染进程枚举: ${err instanceof Error ? err.message : String(err)}`
+        )
       }
     }
     // 回退：渲染进程自行枚举
@@ -165,7 +172,10 @@ class CaptureManager {
           return { success: true }
         }
       } catch (err) {
-        console.warn('[capture-manager] 原生采集启动失败，回退 WebView:', err)
+        getLogger().warn(
+          'capture-manager',
+          `原生采集启动失败，回退 WebView: ${err instanceof Error ? err.message : String(err)}`
+        )
         this.nativeActive = false
       }
     }
@@ -213,7 +223,10 @@ class CaptureManager {
     try {
       return this.nativeAddon.attachToWindow(nsViewHandle)
     } catch (err) {
-      console.warn('[capture-manager] attachToWindow 失败:', err)
+      getLogger().warn(
+        'capture-manager',
+        `attachToWindow 失败: ${err instanceof Error ? err.message : String(err)}`
+      )
       return false
     }
   }
@@ -228,7 +241,10 @@ class CaptureManager {
       const handle = this.mainWindow.getNativeWindowHandle()
       return this.nativeAddon.attachToWindow(handle)
     } catch (err) {
-      console.warn('[capture-manager] 自动 attach 到窗口失败:', err)
+      getLogger().warn(
+        'capture-manager',
+        `自动 attach 到窗口失败: ${err instanceof Error ? err.message : String(err)}`
+      )
       return false
     }
   }
@@ -267,7 +283,7 @@ class CaptureManager {
    */
   private setState(newState: CaptureState): void {
     this.state = newState
-    console.log(`[SwitchCast] 采集状态变更: ${newState}`)
+    getLogger().info('capture-manager', `采集状态变更: ${newState}`)
     this.mainWindow?.webContents.send('capture:state', newState)
   }
 
@@ -283,7 +299,7 @@ class CaptureManager {
    * 发送错误事件到渲染进程
    */
   private emitError(error: CaptureError): void {
-    console.error(`[SwitchCast] 采集错误 [${error.code}]: ${error.message}`)
+    getLogger().error('capture-manager', `采集错误 [${error.code}]: ${error.message}`)
     this.mainWindow?.webContents.send('capture:error', error)
   }
 }

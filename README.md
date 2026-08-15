@@ -74,6 +74,7 @@ Mac / Windows PC → SwitchCast 实时投屏
 3. 启动 SwitchCast，选择视频和音频设备
 4. 点击"开始投屏"即可
 
+> 遇到问题？请参阅 [帮助与排障手册](docs/TROUBLESHOOTING.md)（安装拦截、权限、采集卡与画面、音频、更新、反馈指南）。
 
 ### macOS 安装被拦截怎么办
 
@@ -94,6 +95,14 @@ xattr -cr /Applications/SwitchCast.app
 
 > 为什么会这样：macOS 对从网络下载且未经 Apple 公证的应用会标记隔离属性（quarantine）。v1.0.0 起安装包已附带 ad-hoc 签名，可通过上述方式正常放行。
 
+### 自动更新
+
+SwitchCast 支持应用内就地更新：
+
+- 应用启动后会静默检查 GitHub Releases 是否有新版本，检查过程在后台进行，不影响正常使用
+- 发现新版本时，可在 设置 中手动检查更新，一键就地更新，无需重新下载安装包
+- 若更新后首次启动被 Gatekeeper 拦截（新下载的更新包同样会携带隔离属性），右键点击应用选择“打开”放行即可，处理方式与上方“macOS 安装被拦截怎么办”一致
+
 ### 开发构建
 
 ```bash
@@ -106,6 +115,22 @@ npm run dist         # 打包全平台
 npm run dist:mac     # 仅 macOS
 npm run dist:win     # 仅 Windows
 ```
+
+### 发布 Checklist（面向维护者）
+
+每次发布 Release 时，除 dmg / exe 安装包外，**必须上传按架构区分的 macOS zip 资产**：
+
+| 资产文件 | 适用 |
+|----------|------|
+| `SwitchCast-<version>-arm64-mac.zip` | Apple Silicon（M 系列芯片） |
+| `SwitchCast-<version>-mac.zip` | Intel 芯片 Mac |
+
+这两个 zip 资产是应用内“就地更新”功能的下载源，缺失任一资产将导致对应架构的 Mac 用户无法自动更新。
+
+其他注意事项：
+
+- 每个 Release 的版本号必须递增（如 1.0.0 → 1.0.1），更新检测依赖版本号比较，版本号不递增会导致用户收不到更新提示
+- zip 资产由 electron-builder 在打包 mac 目标时自动生成，发布前请确认已随 Release 一并上传
 
 ## 架构 | Architecture
 
@@ -175,6 +200,7 @@ MIT License — 免费开源，任何人可自由使用、修改和分发。
 - 本项目 **不联网传输任何音视频内容**，所有采集和显示均在本地完成
 - 本项目仅作为投屏显示工具，不涉及任何内容的录制、存储、传输或分发
 - 本项目不绕过、不破解任何 DRM/HDCP 保护机制，采集卡的 HDCP 处理由硬件自行完成
+- 诊断报告为纯本地生成、零自动上报：日志与系统信息仅在用户主动点击“导出诊断报告”时打包，是否上传到 GitHub Issue 完全由用户自主决定
 
 ### 关于使用风险
 

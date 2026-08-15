@@ -19,6 +19,7 @@ const defaultSettings: AppSettings = {
   recordingVideoBitrate: 8000,
   recordingAudioBitrate: 128,
   captureMode: 'auto',
+  checkUpdatesOnLaunch: true,
 }
 
 export const useSettingsStore = defineStore('settings', {
@@ -44,13 +45,18 @@ export const useSettingsStore = defineStore('settings', {
       Object.assign(this, defaultSettings)
     },
 
-    /** 从 localStorage 加载设置 */
+    /** 从 localStorage 加载设置（兼容旧数据：缺失字段补默认值） */
     loadFromStorage() {
       try {
         const raw = localStorage.getItem(STORAGE_KEY)
         if (raw) {
           const parsed = JSON.parse(raw) as Partial<AppSettings>
           this.updateSettings(parsed)
+        }
+        // 旧版本数据可能缺失 checkUpdatesOnLaunch 等非布尔字段，
+        // 类型非法时回退默认值（updateSettings 不会写入 undefined 以外的键）
+        if (typeof this.checkUpdatesOnLaunch !== 'boolean') {
+          this.checkUpdatesOnLaunch = defaultSettings.checkUpdatesOnLaunch
         }
       } catch (err) {
         console.error('[settings] 加载设置失败:', err)
@@ -74,6 +80,7 @@ export const useSettingsStore = defineStore('settings', {
           recordingVideoBitrate: this.recordingVideoBitrate,
           recordingAudioBitrate: this.recordingAudioBitrate,
           captureMode: this.captureMode,
+          checkUpdatesOnLaunch: this.checkUpdatesOnLaunch,
         }
         localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
       } catch (err) {

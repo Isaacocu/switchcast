@@ -71,9 +71,12 @@ import ControlBar from './components/ControlBar.vue'
 import SettingsDialog from './components/SettingsDialog.vue'
 import { useCaptureStore } from './stores/capture'
 import { useSettingsStore } from './stores/settings'
+import { useUpdaterStore } from './stores/updater'
+import type { UpdateProgress, UpdaterStatus } from './types/update'
 
 const captureStore = useCaptureStore()
 const settingsStore = useSettingsStore()
+const updaterStore = useUpdaterStore()
 
 /** 是否显示设置对话框 */
 const showSettings = ref(false)
@@ -84,6 +87,8 @@ const isMac = window.electron?.platform === 'darwin'
 /** IPC 取消订阅函数 */
 let unsubscribeState: (() => void) | null = null
 let unsubscribeError: (() => void) | null = null
+let unsubscribeUpdaterStatus: (() => void) | null = null
+let unsubscribeUpdaterProgress: (() => void) | null = null
 
 // ===== 窗口控制 =====
 function onMinimize() {
@@ -121,7 +126,24 @@ onMounted(async () => {
     captureStore.updateState('error')
   })
 
-  // 4. 枚举设备（触发权限请求）
+  // 4. 订阅更新器状态与下载进度（可选链容错：preload 未注入时跳过）
+  // 「启动时检查更新」开关的 UI 过滤实现（最简方案）：
+  // 主进程启动静默检查始终存在（24h 节流），开关关闭时仅在此处过滤
+  // 自动发现的 available 推送（phase=available 且无进行中操作），不展示更新提示；
+  // 手动检查与用户主动下载后的后续状态推送不受影响。
+  updaterStore.suppressAutoUpdate = !settingsStore.checkUpdatesOnLaunch
+  unsubscribeUpdaterStatus = window.updater?.onStatus((status: UpdaterStatus) => {
+    const inActiveFlow =
+      updaterStore.status.phase === 'checking' ||
+      updaterStore.status.phase === 'downloading'
+    const isAuto = status.phase === 'available' && !inActiveFlow
+    updaterStore.applyStatus(status, isAuto)
+  }) ?? null
+  unsubscribeUpdaterProgress = window.updater?.onProgress((p: UpdateProgress) => {
+    updaterStore.applyProgress(p)
+  }) ?? null
+
+  // 5. 枚举设备（触发权限请求）
   await captureStore.fetchDevices()
 })
 
@@ -132,6 +154,8 @@ onBeforeUnmount(() => {
   // 取消订阅 IPC 事件
   unsubscribeState?.()
   unsubscribeError?.()
+  unsubscribeUpdaterStatus?.()
+  unsubscribeUpdaterProgress?.()
 })
 </script>
 

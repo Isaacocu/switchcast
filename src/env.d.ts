@@ -2,6 +2,7 @@
 /// <reference types="electron-vite/node" />
 
 import type { CaptureConfig, CaptureState, CaptureError, DeviceList } from './types/capture'
+import type { UpdateInfo, UpdaterStatus, UpdateProgress } from './types/update'
 
 declare module '*.vue' {
   import type { DefineComponent } from 'vue'
@@ -49,18 +50,64 @@ interface NativeCaptureApi {
   onStats: (callback: (stats: { fps: number; latency: number }) => void) => () => void
 }
 
-interface Window {
-  /** 采集 API */
-  capture: CaptureApi
-  /** Electron 平台信息 */
-  electron: ElectronApi
-  /** 窗口控制 API */
-  windowControls: WindowControlsApi
-  /** 原生采集 API（仅 macOS 注入，其他平台为 undefined） */
-  nativeCapture: NativeCaptureApi
+/** window.diagnostics — 诊断 API（由 preload contextBridge 暴露） */
+interface DiagnosticsApi {
+  /** 导出诊断报告 zip */
+  exportReport: () => Promise<{ success: boolean; path?: string; error?: string }>
+  /** 打开预填环境信息的 GitHub Issue 页面 */
+  openIssue: () => Promise<{ success: boolean; error?: string }>
+  /** 打开日志目录 */
+  openLogDir: () => Promise<{ success: boolean; error?: string }>
+  /** 渲染进程错误上报（主进程侧限流） */
+  reportError: (level: 'info' | 'warn' | 'error', message: string) => void
+}
+
+/** window.updater — 应用更新 API（由 preload contextBridge 暴露） */
+interface UpdaterApi {
+  /** 检查更新（manual=true 跳过 24h 节流，失败时返回 error） */
+  check: (manual: boolean) => Promise<{ success: boolean; error?: string; info?: UpdateInfo | null }>
+  /** 下载更新包 + 解压暂存（进度经 onProgress 推送） */
+  download: () => Promise<{ success: boolean; error?: string }>
+  /** 就地安装（macOS，守卫检查不通过返回原因） */
+  install: () => Promise<{ success: boolean; error?: string }>
+  /** 打开 GitHub Release 页面（降级路径） */
+  openReleasePage: () => Promise<{ success: boolean; error?: string }>
+  /** 获取当前更新器状态 */
+  getState: () => Promise<UpdaterStatus>
+  /** 注册更新状态回调，返回取消订阅函数 */
+  onStatus: (callback: (status: UpdaterStatus) => void) => () => void
+  /** 注册下载进度回调（主进程侧节流至每秒最多 4 次），返回取消订阅函数 */
+  onProgress: (callback: (progress: UpdateProgress) => void) => () => void
+}
+
+/** window.appInfo — 应用静态信息（由 preload contextBridge 暴露） */
+interface AppInfo {
+  /** 应用版本号（app.getVersion()） */
+  version: string
+  /** 操作系统平台 */
+  platform: string
+  /** CPU 架构 */
+  arch: string
 }
 
 declare global {
+  interface Window {
+    /** 采集 API */
+    capture: CaptureApi
+    /** Electron 平台信息 */
+    electron: ElectronApi
+    /** 窗口控制 API */
+    windowControls: WindowControlsApi
+    /** 原生采集 API（仅 macOS 注入，其他平台为 undefined） */
+    nativeCapture: NativeCaptureApi
+    /** 诊断 API */
+    diagnostics?: DiagnosticsApi
+    /** 应用更新 API */
+    updater: UpdaterApi
+    /** 应用静态信息 */
+    appInfo: AppInfo
+  }
+
   // MediaStreamTrackProcessor (Insertable Streams API) 类型声明
   // Chromium 94+ 支持（Electron 31 满足），TS lib.dom 暂未收录
   class MediaStreamTrackProcessor<T = VideoFrame> {

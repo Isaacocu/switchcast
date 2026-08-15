@@ -1,7 +1,38 @@
-import { app, BrowserWindow, ipcMain, systemPreferences } from 'electron'
+import { app, BrowserWindow, ipcMain, systemPreferences, crashReporter } from 'electron'
 import { join } from 'path'
 import { registerCaptureIpc } from './ipc/capture'
+import { registerDiagnosticsIpc } from './ipc/diagnostics'
+import { registerUpdaterIpc } from './ipc/updater'
 import { getCaptureManager } from './services/capture-manager'
+import { getUpdateChecker } from './services/update-checker'
+import { getLogger } from './services/logger'
+
+// 初始化诊断日志器（内部 console 双写，写盘失败静默，绝不影响主流程）
+const logger = getLogger()
+
+// 全局异常捕获 → 写入诊断日志后以错误码退出（保持崩溃即退出的默认语义，
+// 避免带半损坏状态继续运行）
+process.on('uncaughtException', (err) => {
+  logger.error('main', `uncaughtException: ${err?.stack || err?.message || String(err)}`)
+  void logger.flush().finally(() => process.exit(1))
+})
+
+process.on('unhandledRejection', (reason) => {
+  const detail = reason instanceof Error ? reason.stack || reason.message : String(reason)
+  logger.error('main', `unhandledRejection: ${detail}`)
+})
+
+// 渲染进程 / 子进程崩溃捕获（记录 reason 与 exitCode）
+app.on('render-process-gone', (_event, _webContents, details) => {
+  logger.error('main', `render-process-gone: reason=${details.reason} exitCode=${details.exitCode}`)
+})
+
+app.on('child-process-gone', (_event, details) => {
+  logger.error(
+    'main',
+    `child-process-gone: type=${details.type} reason=${details.reason} exitCode=${details.exitCode}`
+  )
+})
 
 // 跨平台判断
 const isMac = process.platform === 'darwin'
@@ -95,11 +126,21 @@ async function requestMediaAccess(): Promise<void> {
       await systemPreferences.askForMediaAccess('microphone')
     }
   } catch (err) {
-    console.error('[SwitchCast] 媒体权限请求失败:', err)
+    logger.error(
+      'main',
+      `媒体权限请求失败: ${err instanceof Error ? err.message : String(err)}`
+    )
   }
 }
 
 app.whenReady().then(async () => {
+  // 启动本地 Crashpad 崩溃收集（仅本地落盘，不上传）
+  crashReporter.start({
+    productName: 'SwitchCast',
+    companyName: 'SwitchCast',
+    uploadToServer: false
+  })
+
   // 注册窗口控制 IPC（仅注册一次）
   registerWindowIpc()
 
@@ -109,7 +150,26 @@ app.whenReady().then(async () => {
   // 注册采集 IPC handlers
   registerCaptureIpc(ipcMain)
 
+  // 注册诊断日志与报告导出 IPC handlers
+  registerDiagnosticsIpc(ipcMain)
+
+  // 注册应用更新 IPC handlers（含启动时 .app.old 残留清理）
+  registerUpdaterIpc(ipcMain)
+
+  // 应用版本号同步注入（preload 经 sendSync 获取，供 window.appInfo 使用）
+  ipcMain.on('app:getVersion', (event) => {
+    event.returnValue = app.getVersion()
+  })
+
   createWindow()
+
+  // 自动检查更新（仅打包环境）：延迟 10-20s fire-and-forget，
+  // autoCheck 内部走 24h 节流；发现新版本经 update:status 推 available 给窗口
+  if (app.isPackaged) {
+    setTimeout(() => {
+      void getUpdateChecker().autoCheck()
+    }, 10000 + Math.random() * 10000)
+  }
 
   // Phase 3: 原生模块在首次采集时按需加载，无需预初始化
 
@@ -131,6 +191,8 @@ app.on('before-quit', () => {
   try {
     getCaptureManager().destroy()
   } catch (err) {
-    console.warn('[main] 原生模块清理失败:', err)
+    logger.warn('main', `原生模块清理失败: ${err instanceof Error ? err.message : String(err)}`)
   }
+  // 尽力刷盘诊断日志（限时 500ms，不阻塞退出）
+  void logger.flush()
 })
